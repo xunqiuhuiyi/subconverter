@@ -2,12 +2,12 @@
 #include <mutex>
 #include <toml.hpp>
 
-#include "../config/binding.h"
-#include "../handler/webget.h"
-#include "../script/cron.h"
-#include "../server/webserver.h"
-#include "../utils/logger.h"
-#include "../utils/network.h"
+#include "config/binding.h"
+#include "handler/webget.h"
+#include "script/cron.h"
+#include "server/webserver.h"
+#include "utils/logger.h"
+#include "utils/network.h"
 #include "interfaces.h"
 #include "multithread.h"
 #include "settings.h"
@@ -30,7 +30,7 @@ int importItems(string_array &target, bool scope_limit)
     unsigned int itemCount = 0;
     for(std::string &x : target)
     {
-        if(x.find("!!import:") == x.npos)
+        if(x.find("!!import:") == std::string::npos)
         {
             result.emplace_back(x);
             continue;
@@ -46,7 +46,7 @@ int importItems(string_array &target, bool scope_limit)
             content = webGet(path, proxy, global.cacheConfig);
         else
             writeLog(0, "File not found or not a valid URL: " + path, LOG_LEVEL_ERROR);
-        if(!content.size())
+        if(content.empty())
             return -1;
 
         ss << content;
@@ -98,7 +98,7 @@ void importItems(std::vector<toml::value> &root, const std::string &import_key, 
                 content = webGet(path, proxy, global.cacheConfig);
             else
                 writeLog(0, "File not found or not a valid URL: " + path, LOG_LEVEL_ERROR);
-            if(content.size())
+            if(!content.empty())
             {
                 auto items = parseToml(content, path);
                 auto list = toml::find<std::vector<toml::value>>(items, import_key);
@@ -110,32 +110,28 @@ void importItems(std::vector<toml::value> &root, const std::string &import_key, 
     }
     root.swap(newRoot);
     writeLog(0, "Imported " + std::to_string(count) + " item(s).");
-    return;
 }
 
 void readRegexMatch(YAML::Node node, const std::string &delimiter, string_array &dest, bool scope_limit = true)
 {
-    YAML::Node object;
-    std::string script, url, match, rep, strLine;
-
-    for(unsigned i = 0; i < node.size(); i++)
+    for(auto && object : node)
     {
-        object = node[i];
+        std::string script, url, match, rep, strLine;
         object["script"] >>= script;
-        if(script.size())
+        if(!script.empty())
         {
             dest.emplace_back("!!script:" + script);
             continue;
         }
         object["import"] >>= url;
-        if(url.size())
+        if(!url.empty())
         {
             dest.emplace_back("!!import:" + url);
             continue;
         }
         object["match"] >>= match;
         object["replace"] >>= rep;
-        if(match.size() && rep.size())
+        if(!match.empty() && !rep.empty())
             strLine = match + delimiter + rep;
         else
             continue;
@@ -146,20 +142,17 @@ void readRegexMatch(YAML::Node node, const std::string &delimiter, string_array 
 
 void readEmoji(YAML::Node node, string_array &dest, bool scope_limit = true)
 {
-    YAML::Node object;
-    std::string script, url, match, rep, strLine;
-
-    for(unsigned i = 0; i < node.size(); i++)
+    for(auto && object : node)
     {
-        object = node[i];
+        std::string script, url, match, rep, strLine;
         object["script"] >>= script;
-        if(script.size())
+        if(!script.empty())
         {
             dest.emplace_back("!!script:" + script);
             continue;
         }
         object["import"] >>= url;
-        if(url.size())
+        if(!url.empty())
         {
             url = "!!import:" + url;
             dest.emplace_back(url);
@@ -167,7 +160,7 @@ void readEmoji(YAML::Node node, string_array &dest, bool scope_limit = true)
         }
         object["match"] >>= match;
         object["emoji"] >>= rep;
-        if(match.size() && rep.size())
+        if(!match.empty() && !rep.empty())
             strLine = match + "," + rep;
         else
             continue;
@@ -178,17 +171,12 @@ void readEmoji(YAML::Node node, string_array &dest, bool scope_limit = true)
 
 void readGroup(YAML::Node node, string_array &dest, bool scope_limit = true)
 {
-    std::string strLine, name, type;
-    string_array tempArray;
-    YAML::Node object;
-    unsigned int i, j;
-
-    for(i = 0; i < node.size(); i++)
+    for(YAML::Node && object : node)
     {
-        eraseElements(tempArray);
-        object = node[i];
+        string_array tempArray;
+        std::string name, type;
         object["import"] >>= name;
-        if(name.size())
+        if(!name.empty())
         {
             dest.emplace_back("!!import:" + name);
             continue;
@@ -202,7 +190,7 @@ void readGroup(YAML::Node node, string_array &dest, bool scope_limit = true)
         object["interval"] >>= interval;
         object["tolerance"] >>= tolerance;
         object["timeout"] >>= timeout;
-        for(j = 0; j < object["rule"].size(); j++)
+        for(std::size_t j = 0; j < object["rule"].size(); j++)
             tempArray.emplace_back(safe_as<std::string>(object["rule"][j]));
         switch(hash_(type))
         {
@@ -221,10 +209,7 @@ void readGroup(YAML::Node node, string_array &dest, bool scope_limit = true)
             tempArray.emplace_back(interval + "," + timeout + "," + tolerance);
         }
 
-        strLine = std::accumulate(std::next(tempArray.begin()), tempArray.end(), tempArray[0], [](std::string a, std::string b) -> std::string
-        {
-            return std::move(a) + "`" + std::move(b);
-        });
+        std::string strLine = join(tempArray, "`");
         dest.emplace_back(std::move(strLine));
     }
     importItems(dest, scope_limit);
@@ -232,14 +217,11 @@ void readGroup(YAML::Node node, string_array &dest, bool scope_limit = true)
 
 void readRuleset(YAML::Node node, string_array &dest, bool scope_limit = true)
 {
-    std::string strLine, name, url, group, interval;
-    YAML::Node object;
-
-    for(unsigned int i = 0; i < node.size(); i++)
+    for(auto && object : node)
     {
-        object = node[i];
+        std::string strLine, name, url, group, interval;
         object["import"] >>= name;
-        if(name.size())
+        if(!name.empty())
         {
             dest.emplace_back("!!import:" + name);
             continue;
@@ -248,13 +230,13 @@ void readRuleset(YAML::Node node, string_array &dest, bool scope_limit = true)
         object["group"] >>= group;
         object["rule"] >>= name;
         object["interval"] >>= interval;
-        if(url.size())
+        if(!url.empty())
         {
             strLine = group + "," + url;
-            if(interval.size())
+            if(!interval.empty())
                 strLine += "," + interval;
         }
-        else if(name.size())
+        else if(!name.empty())
             strLine = group + ",[]" + name;
         else
             continue;
@@ -292,7 +274,7 @@ void refreshRulesets(RulesetConfigs &ruleset_list, std::vector<RulesetContent> &
                 type = iter->second;
             }
             writeLog(0, "Updating ruleset url '" + rule_url + "' with group '" + rule_group + "'.", LOG_LEVEL_INFO);
-            rc = {rule_group, rule_url, rule_url_typed, type, fetchFileAsync(rule_url, proxy, global.cacheRuleset, global.asyncFetchRuleset), x.Interval};
+            rc = {rule_group, rule_url, rule_url_typed, type, fetchFileAsync(rule_url, proxy, global.cacheRuleset, true, global.asyncFetchRuleset), x.Interval};
         }
         ruleset_content_array.emplace_back(std::move(rc));
     }
@@ -349,12 +331,14 @@ void readYAMLConf(YAML::Node &node)
     section["quanx_rule_base"] >> global.quanXBase;
     section["loon_rule_base"] >> global.loonBase;
     section["sssub_rule_base"] >> global.SSSubBase;
+    section["singbox_rule_base"] >> global.singBoxBase;
 
     section["default_external_config"] >> global.defaultExtConfig;
     section["append_proxy_type"] >> global.appendType;
     section["proxy_config"] >> global.proxyConfig;
     section["proxy_ruleset"] >> global.proxyRuleset;
     section["proxy_subscription"] >> global.proxySubscription;
+    section["reload_conf_on_request"] >> global.reloadConfOnRequest;
 
     if(node["userinfo"].IsDefined())
     {
@@ -393,6 +377,8 @@ void readYAMLConf(YAML::Node &node)
         section["append_sub_userinfo"] >> global.appendUserinfo;
         section["clash_use_new_field_name"] >> global.clashUseNewField;
         section["clash_proxies_style"] >> global.clashProxiesStyle;
+        section["clash_proxy_groups_style"] >> global.clashProxyGroupsStyle;
+        section["singbox_add_clash_modes"] >> global.singBoxAddClashModes;
     }
 
     if(section["rename_node"].IsSequence())
@@ -581,24 +567,24 @@ void readYAMLConf(YAML::Node &node)
 }
 
 template <class T, class... U>
-void find_if_exist(const toml::value &v, const toml::key &k, T& target, U&&... args)
+void find_if_exist(const toml::value &v, const toml::value::key_type &k, T& target, U&&... args)
 {
     if(v.contains(k)) target = toml::find<T>(v, k);
     if constexpr (sizeof...(args) > 0) find_if_exist(v, std::forward<U>(args)...);
 }
 
-void operate_toml_kv_table(const std::vector<toml::table> &arr, const toml::key &key_name, const toml::key &value_name, std::function<void (const toml::value&, const toml::value&)> binary_op)
+void operate_toml_kv_table(const std::vector<toml::table> &arr, const toml::value::key_type &key_name, const toml::value::key_type &value_name, std::function<void (const toml::value&, const toml::value&)> binary_op)
 {
     for(const toml::table &table : arr)
     {
-        const auto &key = table.at(key_name), value = table.at(value_name);
+        const auto &key = table.at(key_name), &value = table.at(value_name);
         binary_op(key, value);
     }
 }
 
 void readTOMLConf(toml::value &root)
 {
-    const auto &section_common = toml::find(root, "common");
+    auto section_common = toml::find(root, "common");
     string_array default_url, insert_url;
 
     find_if_exist(section_common, "default_url", default_url, "insert_url", insert_url);
@@ -623,10 +609,13 @@ void readTOMLConf(toml::value &root)
                   "quan_rule_base", global.quanBase,
                   "quanx_rule_base", global.quanXBase,
                   "loon_rule_base", global.loonBase,
+                  "sssub_rule_base", global.SSSubBase,
+                  "singbox_rule_base", global.singBoxBase,
                   "proxy_config", global.proxyConfig,
                   "proxy_ruleset", global.proxyRuleset,
                   "proxy_subscription", global.proxySubscription,
-                  "append_proxy_type", global.appendType
+                  "append_proxy_type", global.appendType,
+                  "reload_conf_on_request", global.reloadConfOnRequest
     );
 
     if(filter)
@@ -637,7 +626,7 @@ void readTOMLConf(toml::value &root)
     safe_set_streams(toml::find_or<RegexMatchConfigs>(root, "userinfo", "stream_rule", RegexMatchConfigs{}));
     safe_set_times(toml::find_or<RegexMatchConfigs>(root, "userinfo", "time_rule", RegexMatchConfigs{}));
 
-    const auto &section_node_pref = toml::find(root, "node_pref");
+    auto section_node_pref = toml::find(root, "node_pref");
 
     find_if_exist(section_node_pref,
                   "udp_flag", global.UDPFlag,
@@ -649,14 +638,16 @@ void readTOMLConf(toml::value &root)
                   "filter_deprecated_nodes", global.filterDeprecated,
                   "append_sub_userinfo", global.appendUserinfo,
                   "clash_use_new_field_name", global.clashUseNewField,
-                  "clash_proxies_style", global.clashProxiesStyle
+                  "clash_proxies_style", global.clashProxiesStyle,
+                  "clash_proxy_groups_style", global.clashProxyGroupsStyle,
+                  "singbox_add_clash_modes", global.singBoxAddClashModes
     );
 
     auto renameconfs = toml::find_or<std::vector<toml::value>>(section_node_pref, "rename_node", {});
     importItems(renameconfs, "rename_node", false);
     safe_set_renames(toml::get<RegexMatchConfigs>(toml::value(renameconfs)));
 
-    const auto &section_managed = toml::find(root, "managed_config");
+    auto section_managed = toml::find(root, "managed_config");
 
     find_if_exist(section_managed,
                   "write_managed_config", global.writeManagedConfig,
@@ -666,13 +657,13 @@ void readTOMLConf(toml::value &root)
                   "quanx_device_id", global.quanXDevID
     );
 
-    const auto &section_surge_external = toml::find(root, "surge_external_proxy");
+    auto section_surge_external = toml::find(root, "surge_external_proxy");
     find_if_exist(section_surge_external,
                   "surge_ssr_path", global.surgeSSRPath,
                   "resolve_hostname", global.surgeResolveHostname
     );
 
-    const auto &section_emojis = toml::find(root, "emojis");
+    auto section_emojis = toml::find(root, "emojis");
 
     find_if_exist(section_emojis,
                   "add_emoji", global.addEmoji,
@@ -687,7 +678,7 @@ void readTOMLConf(toml::value &root)
     importItems(groups, "custom_groups", false);
     global.customProxyGroups = toml::get<ProxyGroupConfigs>(toml::value(groups));
 
-    const auto &section_ruleset = toml::find(root, "ruleset");
+    auto section_ruleset = toml::find(root, "ruleset");
 
     find_if_exist(section_ruleset,
                   "enabled", global.enableRuleGen,
@@ -699,7 +690,7 @@ void readTOMLConf(toml::value &root)
     importItems(rulesets, "rulesets", false);
     global.customRulesets = toml::get<RulesetConfigs>(toml::value(rulesets));
 
-    const auto &section_template = toml::find(root, "template");
+    auto section_template = toml::find(root, "template");
 
     global.templatePath = toml::find_or(section_template, "template_path", "template");
 
@@ -718,8 +709,9 @@ void readTOMLConf(toml::value &root)
     auto tasks = toml::find_or<std::vector<toml::value>>(root, "tasks", {});
     importItems(tasks, "tasks", false);
     global.cronTasks = toml::get<CronTaskConfigs>(toml::value(tasks));
+    refresh_schedule();
 
-    const auto &section_server = toml::find(root, "server");
+    auto section_server = toml::find(root, "server");
 
     find_if_exist(section_server,
                   "listen", global.listenAddress,
@@ -728,7 +720,7 @@ void readTOMLConf(toml::value &root)
     );
     webServer.serve_file = !webServer.serve_file_root.empty();
 
-    const auto &section_advanced = toml::find(root, "advanced");
+    auto section_advanced = toml::find(root, "advanced");
 
     std::string log_level;
     bool enable_cache = true;
@@ -804,14 +796,14 @@ void readConf()
     try
     {
         std::string prefdata = fileGet(global.prefPath, false);
-        if(prefdata.find("common:") != prefdata.npos)
+        if(prefdata.find("common:") != std::string::npos)
         {
             YAML::Node yaml = YAML::Load(prefdata);
             if(yaml.size() && yaml["common"])
                 return readYAMLConf(yaml);
         }
         toml::value conf = parseToml(prefdata, global.prefPath);
-        if(!conf.is_uninitialized() && toml::find_or<int>(conf, "version", 0))
+        if(!conf.is_empty() && toml::find_or<int>(conf, "version", 0))
             return readTOMLConf(conf);
     }
     catch (YAML::Exception &e)
@@ -830,69 +822,74 @@ void readConf()
     INIReader ini;
     ini.allow_dup_section_titles = true;
     //ini.do_utf8_to_gbk = true;
-    int retVal = ini.ParseFile(global.prefPath);
+    int retVal = ini.parse_file(global.prefPath);
     if(retVal != INIREADER_EXCEPTION_NONE)
     {
-        writeLog(0, "Unable to load preference settings as INI. Reason: " + ini.GetLastError(), LOG_LEVEL_FATAL);
+        writeLog(0, "Unable to load preference settings as INI. Reason: " + ini.get_last_error(), LOG_LEVEL_FATAL);
         return;
     }
 
     string_array tempArray;
 
-    ini.EnterSection("common");
-    ini.GetBoolIfExist("api_mode", global.APIMode);
-    ini.GetIfExist("api_access_token", global.accessToken);
-    ini.GetIfExist("default_url", global.defaultUrls);
-    global.enableInsert = ini.Get("enable_insert");
-    ini.GetIfExist("insert_url", global.insertUrls);
-    ini.GetBoolIfExist("prepend_insert_url", global.prependInsert);
-    if(ini.ItemPrefixExist("exclude_remarks"))
-        ini.GetAll("exclude_remarks", global.excludeRemarks);
-    if(ini.ItemPrefixExist("include_remarks"))
-        ini.GetAll("include_remarks", global.includeRemarks);
-    global.filterScript = ini.GetBool("enable_filter") ? ini.Get("filter_script"): "";
-    ini.GetIfExist("base_path", global.basePath);
-    ini.GetIfExist("clash_rule_base", global.clashBase);
-    ini.GetIfExist("surge_rule_base", global.surgeBase);
-    ini.GetIfExist("surfboard_rule_base", global.surfboardBase);
-    ini.GetIfExist("mellow_rule_base", global.mellowBase);
-    ini.GetIfExist("quan_rule_base", global.quanBase);
-    ini.GetIfExist("quanx_rule_base", global.quanXBase);
-    ini.GetIfExist("loon_rule_base", global.loonBase);
-    ini.GetIfExist("default_external_config", global.defaultExtConfig);
-    ini.GetBoolIfExist("append_proxy_type", global.appendType);
-    ini.GetIfExist("proxy_config", global.proxyConfig);
-    ini.GetIfExist("proxy_ruleset", global.proxyRuleset);
-    ini.GetIfExist("proxy_subscription", global.proxySubscription);
+    ini.enter_section("common");
+    ini.get_bool_if_exist("api_mode", global.APIMode);
+    ini.get_if_exist("api_access_token", global.accessToken);
+    ini.get_if_exist("default_url", global.defaultUrls);
+    global.enableInsert = ini.get("enable_insert");
+    ini.get_if_exist("insert_url", global.insertUrls);
+    ini.get_bool_if_exist("prepend_insert_url", global.prependInsert);
+    if(ini.item_prefix_exist("exclude_remarks"))
+        ini.get_all("exclude_remarks", global.excludeRemarks);
+    if(ini.item_prefix_exist("include_remarks"))
+        ini.get_all("include_remarks", global.includeRemarks);
+    global.filterScript = ini.get_bool("enable_filter") ? ini.get("filter_script") : "";
+    ini.get_if_exist("base_path", global.basePath);
+    ini.get_if_exist("clash_rule_base", global.clashBase);
+    ini.get_if_exist("surge_rule_base", global.surgeBase);
+    ini.get_if_exist("surfboard_rule_base", global.surfboardBase);
+    ini.get_if_exist("mellow_rule_base", global.mellowBase);
+    ini.get_if_exist("quan_rule_base", global.quanBase);
+    ini.get_if_exist("quanx_rule_base", global.quanXBase);
+    ini.get_if_exist("loon_rule_base", global.loonBase);
+    ini.get_if_exist("sssub_rule_base", global.SSSubBase);
+    ini.get_if_exist("singbox_rule_base", global.singBoxBase);
+    ini.get_if_exist("default_external_config", global.defaultExtConfig);
+    ini.get_bool_if_exist("append_proxy_type", global.appendType);
+    ini.get_if_exist("proxy_config", global.proxyConfig);
+    ini.get_if_exist("proxy_ruleset", global.proxyRuleset);
+    ini.get_if_exist("proxy_subscription", global.proxySubscription);
+    ini.get_bool_if_exist("reload_conf_on_request", global.reloadConfOnRequest);
 
-    if(ini.SectionExist("surge_external_proxy"))
+    if(ini.section_exist("surge_external_proxy"))
     {
-        ini.EnterSection("surge_external_proxy");
-        ini.GetIfExist("surge_ssr_path", global.surgeSSRPath);
-        ini.GetBoolIfExist("resolve_hostname", global.surgeResolveHostname);
+        ini.enter_section("surge_external_proxy");
+        ini.get_if_exist("surge_ssr_path", global.surgeSSRPath);
+        ini.get_bool_if_exist("resolve_hostname", global.surgeResolveHostname);
     }
 
-    if(ini.SectionExist("node_pref"))
+    if(ini.section_exist("node_pref"))
     {
-        ini.EnterSection("node_pref");
+        ini.enter_section("node_pref");
         /*
         ini.GetBoolIfExist("udp_flag", udp_flag);
-        ini.GetBoolIfExist("tcp_fast_open_flag", tfo_flag);
-        ini.GetBoolIfExist("skip_cert_verify_flag", scv_flag);
+        ini.get_bool_if_exist("tcp_fast_open_flag", tfo_flag);
+        ini.get_bool_if_exist("skip_cert_verify_flag", scv_flag);
         */
-        global.UDPFlag.set(ini.Get("udp_flag"));
-        global.TFOFlag.set(ini.Get("tcp_fast_open_flag"));
-        global.skipCertVerify.set(ini.Get("skip_cert_verify_flag"));
-        global.TLS13Flag.set(ini.Get("tls13_flag"));
-        ini.GetBoolIfExist("sort_flag", global.enableSort);
-        global.sortScript = ini.Get("sort_script");
-        ini.GetBoolIfExist("filter_deprecated_nodes", global.filterDeprecated);
-        ini.GetBoolIfExist("append_sub_userinfo", global.appendUserinfo);
-        ini.GetBoolIfExist("clash_use_new_field_name", global.clashUseNewField);
-        ini.GetIfExist("clash_proxies_style", global.clashProxiesStyle);
-        if(ini.ItemPrefixExist("rename_node"))
+        global.UDPFlag.set(ini.get("udp_flag"));
+        global.TFOFlag.set(ini.get("tcp_fast_open_flag"));
+        global.skipCertVerify.set(ini.get("skip_cert_verify_flag"));
+        global.TLS13Flag.set(ini.get("tls13_flag"));
+        ini.get_bool_if_exist("sort_flag", global.enableSort);
+        global.sortScript = ini.get("sort_script");
+        ini.get_bool_if_exist("filter_deprecated_nodes", global.filterDeprecated);
+        ini.get_bool_if_exist("append_sub_userinfo", global.appendUserinfo);
+        ini.get_bool_if_exist("clash_use_new_field_name", global.clashUseNewField);
+        ini.get_if_exist("clash_proxies_style", global.clashProxiesStyle);
+        ini.get_if_exist("clash_proxy_groups_style", global.clashProxyGroupsStyle);
+        ini.get_bool_if_exist("singbox_add_clash_modes", global.singBoxAddClashModes);
+        if(ini.item_prefix_exist("rename_node"))
         {
-            ini.GetAll("rename_node", tempArray);
+            ini.get_all("rename_node", tempArray);
             importItems(tempArray, false);
             auto configs = INIBinding::from<RegexMatchConfig>::from_ini(tempArray, "@");
             safe_set_renames(configs);
@@ -900,20 +897,20 @@ void readConf()
         }
     }
 
-    if(ini.SectionExist("userinfo"))
+    if(ini.section_exist("userinfo"))
     {
-        ini.EnterSection("userinfo");
-        if(ini.ItemPrefixExist("stream_rule"))
+        ini.enter_section("userinfo");
+        if(ini.item_prefix_exist("stream_rule"))
         {
-            ini.GetAll("stream_rule", tempArray);
+            ini.get_all("stream_rule", tempArray);
             importItems(tempArray, false);
             auto configs = INIBinding::from<RegexMatchConfig>::from_ini(tempArray, "|");
             safe_set_streams(configs);
             eraseElements(tempArray);
         }
-        if(ini.ItemPrefixExist("time_rule"))
+        if(ini.item_prefix_exist("time_rule"))
         {
-            ini.GetAll("time_rule", tempArray);
+            ini.get_all("time_rule", tempArray);
             importItems(tempArray, false);
             auto configs = INIBinding::from<RegexMatchConfig>::from_ini(tempArray, "|");
             safe_set_times(configs);
@@ -921,45 +918,45 @@ void readConf()
         }
     }
 
-    ini.EnterSection("managed_config");
-    ini.GetBoolIfExist("write_managed_config", global.writeManagedConfig);
-    ini.GetIfExist("managed_config_prefix", global.managedConfigPrefix);
-    ini.GetIntIfExist("config_update_interval", global.updateInterval);
-    ini.GetBoolIfExist("config_update_strict", global.updateStrict);
-    ini.GetIfExist("quanx_device_id", global.quanXDevID);
+    ini.enter_section("managed_config");
+    ini.get_bool_if_exist("write_managed_config", global.writeManagedConfig);
+    ini.get_if_exist("managed_config_prefix", global.managedConfigPrefix);
+    ini.get_int_if_exist("config_update_interval", global.updateInterval);
+    ini.get_bool_if_exist("config_update_strict", global.updateStrict);
+    ini.get_if_exist("quanx_device_id", global.quanXDevID);
 
-    ini.EnterSection("emojis");
-    ini.GetBoolIfExist("add_emoji", global.addEmoji);
-    ini.GetBoolIfExist("remove_old_emoji", global.removeEmoji);
-    if(ini.ItemPrefixExist("rule"))
+    ini.enter_section("emojis");
+    ini.get_bool_if_exist("add_emoji", global.addEmoji);
+    ini.get_bool_if_exist("remove_old_emoji", global.removeEmoji);
+    if(ini.item_prefix_exist("rule"))
     {
-        ini.GetAll("rule", tempArray);
+        ini.get_all("rule", tempArray);
         importItems(tempArray, false);
         auto configs = INIBinding::from<RegexMatchConfig>::from_ini(tempArray, ",");
         safe_set_emojis(configs);
         eraseElements(tempArray);
     }
 
-    if(ini.SectionExist("rulesets"))
-        ini.EnterSection("rulesets");
+    if(ini.section_exist("rulesets"))
+        ini.enter_section("rulesets");
     else
-        ini.EnterSection("ruleset");
-    global.enableRuleGen = ini.GetBool("enabled");
+        ini.enter_section("ruleset");
+    global.enableRuleGen = ini.get_bool("enabled");
     if(global.enableRuleGen)
     {
-        ini.GetBoolIfExist("overwrite_original_rules", global.overwriteOriginalRules);
-        ini.GetBoolIfExist("update_ruleset_on_request", global.updateRulesetOnRequest);
-        if(ini.ItemPrefixExist("ruleset"))
+        ini.get_bool_if_exist("overwrite_original_rules", global.overwriteOriginalRules);
+        ini.get_bool_if_exist("update_ruleset_on_request", global.updateRulesetOnRequest);
+        if(ini.item_prefix_exist("ruleset"))
         {
             string_array vArray;
-            ini.GetAll("ruleset", vArray);
+            ini.get_all("ruleset", vArray);
             importItems(vArray, false);
             global.customRulesets = INIBinding::from<RulesetConfig>::from_ini(vArray);
         }
-        else if(ini.ItemPrefixExist("surge_ruleset"))
+        else if(ini.item_prefix_exist("surge_ruleset"))
         {
             string_array vArray;
-            ini.GetAll("surge_ruleset", vArray);
+            ini.get_all("surge_ruleset", vArray);
             importItems(vArray, false);
             global.customRulesets = INIBinding::from<RulesetConfig>::from_ini(vArray);
         }
@@ -970,22 +967,22 @@ void readConf()
         global.updateRulesetOnRequest = false;
     }
 
-    if(ini.SectionExist("proxy_groups"))
-        ini.EnterSection("proxy_groups");
+    if(ini.section_exist("proxy_groups"))
+        ini.enter_section("proxy_groups");
     else
-        ini.EnterSection("clash_proxy_group");
-    if(ini.ItemPrefixExist("custom_proxy_group"))
+        ini.enter_section("clash_proxy_group");
+    if(ini.item_prefix_exist("custom_proxy_group"))
     {
         string_array vArray;
-        ini.GetAll("custom_proxy_group", vArray);
+        ini.get_all("custom_proxy_group", vArray);
         importItems(vArray, false);
         global.customProxyGroups = INIBinding::from<ProxyGroupConfig>::from_ini(vArray);
     }
 
-    ini.EnterSection("template");
-    ini.GetIfExist("template_path", global.templatePath);
+    ini.enter_section("template");
+    ini.get_if_exist("template_path", global.templatePath);
     string_multimap tempmap;
-    ini.GetItems(tempmap);
+    ini.get_items(tempmap);
     eraseElements(global.templateVars);
     for(auto &x : tempmap)
     {
@@ -995,36 +992,36 @@ void readConf()
     }
     global.templateVars["managed_config_prefix"] = global.managedConfigPrefix;
 
-    if(ini.SectionExist("aliases"))
+    if(ini.section_exist("aliases"))
     {
-        ini.EnterSection("aliases");
-        ini.GetItems(tempmap);
+        ini.enter_section("aliases");
+        ini.get_items(tempmap);
         webServer.reset_redirect();
         for(auto &x : tempmap)
             webServer.append_redirect(x.first, x.second);
     }
 
-    if(ini.SectionExist("tasks"))
+    if(ini.section_exist("tasks"))
     {
         string_array vArray;
-        ini.EnterSection("tasks");
-        ini.GetAll("task", vArray);
+        ini.enter_section("tasks");
+        ini.get_all("task", vArray);
         importItems(vArray, false);
         global.enableCron = !vArray.empty();
         global.cronTasks = INIBinding::from<CronTaskConfig>::from_ini(vArray);
         refresh_schedule();
     }
 
-    ini.EnterSection("server");
-    ini.GetIfExist("listen", global.listenAddress);
-    ini.GetIntIfExist("port", global.listenPort);
-    webServer.serve_file_root = ini.Get("serve_file_root");
+    ini.enter_section("server");
+    ini.get_if_exist("listen", global.listenAddress);
+    ini.get_int_if_exist("port", global.listenPort);
+    webServer.serve_file_root = ini.get("serve_file_root");
     webServer.serve_file = !webServer.serve_file_root.empty();
 
-    ini.EnterSection("advanced");
+    ini.enter_section("advanced");
     std::string log_level;
-    ini.GetIfExist("log_level", log_level);
-    ini.GetBoolIfExist("print_debug_info", global.printDbgInfo);
+    ini.get_if_exist("log_level", log_level);
+    ini.get_bool_if_exist("print_debug_info", global.printDbgInfo);
     if(global.printDbgInfo)
         global.logLevel = LOG_LEVEL_VERBOSE;
     else
@@ -1050,19 +1047,19 @@ void readConf()
             global.logLevel = LOG_LEVEL_INFO;
         }
     }
-    ini.GetIntIfExist("max_pending_connections", global.maxPendingConns);
-    ini.GetIntIfExist("max_concurrent_threads", global.maxConcurThreads);
-    ini.GetNumberIfExist("max_allowed_rulesets", global.maxAllowedRulesets);
-    ini.GetNumberIfExist("max_allowed_rules", global.maxAllowedRules);
-    ini.GetNumberIfExist("max_allowed_download_size", global.maxAllowedDownloadSize);
-    if(ini.ItemExist("enable_cache"))
+    ini.get_int_if_exist("max_pending_connections", global.maxPendingConns);
+    ini.get_int_if_exist("max_concurrent_threads", global.maxConcurThreads);
+    ini.get_number_if_exist("max_allowed_rulesets", global.maxAllowedRulesets);
+    ini.get_number_if_exist("max_allowed_rules", global.maxAllowedRules);
+    ini.get_number_if_exist("max_allowed_download_size", global.maxAllowedDownloadSize);
+    if(ini.item_exist("enable_cache"))
     {
-        if(ini.GetBool("enable_cache"))
+        if(ini.get_bool("enable_cache"))
         {
-            ini.GetIntIfExist("cache_subscription", global.cacheSubscription);
-            ini.GetIntIfExist("cache_config", global.cacheConfig);
-            ini.GetIntIfExist("cache_ruleset", global.cacheRuleset);
-            ini.GetBoolIfExist("serve_cache_on_fetch_fail", global.serveCacheOnFetchFail);
+            ini.get_int_if_exist("cache_subscription", global.cacheSubscription);
+            ini.get_int_if_exist("cache_config", global.cacheConfig);
+            ini.get_int_if_exist("cache_ruleset", global.cacheRuleset);
+            ini.get_bool_if_exist("serve_cache_on_fetch_fail", global.serveCacheOnFetchFail);
         }
         else
         {
@@ -1070,9 +1067,9 @@ void readConf()
             global.serveCacheOnFetchFail = false;
         }
     }
-    ini.GetBoolIfExist("script_clean_context", global.scriptCleanContext);
-    ini.GetBoolIfExist("async_fetch_ruleset", global.asyncFetchRuleset);
-    ini.GetBoolIfExist("skip_failed_links", global.skipFailedLinks);
+    ini.get_bool_if_exist("script_clean_context", global.scriptCleanContext);
+    ini.get_bool_if_exist("async_fetch_ruleset", global.asyncFetchRuleset);
+    ini.get_bool_if_exist("skip_failed_links", global.skipFailedLinks);
 
     writeLog(0, "Load preference settings in INI format completed.", LOG_LEVEL_INFO);
 }
@@ -1091,6 +1088,7 @@ int loadExternalYAML(YAML::Node &node, ExternalConfig &ext)
     section["quanx_rule_base"] >> ext.quanx_rule_base;
     section["loon_rule_base"] >> ext.loon_rule_base;
     section["sssub_rule_base"] >> ext.sssub_rule_base;
+    section["singbox_rule_base"] >> ext.singbox_rule_base;
 
     section["enable_rule_generator"] >> ext.enable_rule_generator;
     section["overwrite_original_rules"] >> ext.overwrite_original_rules;
@@ -1152,7 +1150,7 @@ int loadExternalYAML(YAML::Node &node, ExternalConfig &ext)
 
 int loadExternalTOML(toml::value &root, ExternalConfig &ext)
 {
-    const auto &section = toml::find(root, "custom");
+    auto section = toml::find(root, "custom");
 
     find_if_exist(section,
                   "enable_rule_generator", ext.enable_rule_generator,
@@ -1163,14 +1161,16 @@ int loadExternalTOML(toml::value &root, ExternalConfig &ext)
                   "mellow_rule_base", ext.mellow_rule_base,
                   "quan_rule_base", ext.quan_rule_base,
                   "quanx_rule_base", ext.quanx_rule_base,
+                  "loon_rule_base", ext.loon_rule_base,
                   "sssub_rule_base", ext.sssub_rule_base,
+                  "singbox_rule_base", ext.singbox_rule_base,
                   "add_emoji", ext.add_emoji,
                   "remove_old_emoji", ext.remove_old_emoji,
                   "include_remarks", ext.include,
                   "exclude_remarks", ext.exclude
     );
 
-    if(ext.tpl_args != nullptr) operate_toml_kv_table(toml::find_or<std::vector<toml::table>>(section, "template_args", {}), "key", "value",
+    if(ext.tpl_args != nullptr) operate_toml_kv_table(toml::find_or<std::vector<toml::table>>(root, "template_args", {}), "key", "value",
                                                       [&](const toml::value &key, const toml::value &value)
     {
         std::string val = toml::format(value);
@@ -1213,7 +1213,7 @@ int loadExternalConfig(std::string &path, ExternalConfig &ext)
         if(yaml.size() && yaml["custom"].IsDefined())
             return loadExternalYAML(yaml, ext);
         toml::value conf = parseToml(base_content, path);
-        if(!conf.is_uninitialized() && toml::find_or<int>(conf, "version", 0))
+        if(!conf.is_empty() && toml::find_or<int>(conf, "version", 0))
             return loadExternalTOML(conf, ext);
     }
     catch (YAML::Exception &e)
@@ -1227,27 +1227,27 @@ int loadExternalConfig(std::string &path, ExternalConfig &ext)
 
     INIReader ini;
     ini.store_isolated_line = true;
-    ini.SetIsolatedItemsSection("custom");
-    if(ini.Parse(base_content) != INIREADER_EXCEPTION_NONE)
+    ini.set_isolated_items_section("custom");
+    if(ini.parse(base_content) != INIREADER_EXCEPTION_NONE)
     {
-        //std::cerr<<"Load external configuration failed. Reason: "<<ini.GetLastError()<<"\n";
-        writeLog(0, "Load external configuration failed. Reason: " + ini.GetLastError(), LOG_LEVEL_ERROR);
+        //std::cerr<<"Load external configuration failed. Reason: "<<ini.get_last_error()<<"\n";
+        writeLog(0, "Load external configuration failed. Reason: " + ini.get_last_error(), LOG_LEVEL_ERROR);
         return -1;
     }
 
-    ini.EnterSection("custom");
-    if(ini.ItemPrefixExist("custom_proxy_group"))
+    ini.enter_section("custom");
+    if(ini.item_prefix_exist("custom_proxy_group"))
     {
         string_array vArray;
-        ini.GetAll("custom_proxy_group", vArray);
+        ini.get_all("custom_proxy_group", vArray);
         importItems(vArray, global.APIMode);
         ext.custom_proxy_group = INIBinding::from<ProxyGroupConfig>::from_ini(vArray);
     }
-    std::string ruleset_name = ini.ItemPrefixExist("ruleset") ? "ruleset" : "surge_ruleset";
-    if(ini.ItemPrefixExist(ruleset_name))
+    std::string ruleset_name = ini.item_prefix_exist("ruleset") ? "ruleset" : "surge_ruleset";
+    if(ini.item_prefix_exist(ruleset_name))
     {
         string_array vArray;
-        ini.GetAll(ruleset_name, vArray);
+        ini.get_all(ruleset_name, vArray);
         importItems(vArray, global.APIMode);
         if(global.maxAllowedRulesets && vArray.size() > global.maxAllowedRulesets)
         {
@@ -1257,44 +1257,45 @@ int loadExternalConfig(std::string &path, ExternalConfig &ext)
         ext.surge_ruleset = INIBinding::from<RulesetConfig>::from_ini(vArray);
     }
 
-    ini.GetIfExist("clash_rule_base", ext.clash_rule_base);
-    ini.GetIfExist("surge_rule_base", ext.surge_rule_base);
-    ini.GetIfExist("surfboard_rule_base", ext.surfboard_rule_base);
-    ini.GetIfExist("mellow_rule_base", ext.mellow_rule_base);
-    ini.GetIfExist("quan_rule_base", ext.quan_rule_base);
-    ini.GetIfExist("quanx_rule_base", ext.quanx_rule_base);
-    ini.GetIfExist("loon_rule_base", ext.loon_rule_base);
-    ini.GetIfExist("sssub_rule_base", ext.sssub_rule_base);
+    ini.get_if_exist("clash_rule_base", ext.clash_rule_base);
+    ini.get_if_exist("surge_rule_base", ext.surge_rule_base);
+    ini.get_if_exist("surfboard_rule_base", ext.surfboard_rule_base);
+    ini.get_if_exist("mellow_rule_base", ext.mellow_rule_base);
+    ini.get_if_exist("quan_rule_base", ext.quan_rule_base);
+    ini.get_if_exist("quanx_rule_base", ext.quanx_rule_base);
+    ini.get_if_exist("loon_rule_base", ext.loon_rule_base);
+    ini.get_if_exist("sssub_rule_base", ext.sssub_rule_base);
+    ini.get_if_exist("singbox_rule_base", ext.singbox_rule_base);
 
-    ini.GetBoolIfExist("overwrite_original_rules", ext.overwrite_original_rules);
-    ini.GetBoolIfExist("enable_rule_generator", ext.enable_rule_generator);
+    ini.get_bool_if_exist("overwrite_original_rules", ext.overwrite_original_rules);
+    ini.get_bool_if_exist("enable_rule_generator", ext.enable_rule_generator);
 
-    if(ini.ItemPrefixExist("rename"))
+    if(ini.item_prefix_exist("rename"))
     {
         string_array vArray;
-        ini.GetAll("rename", vArray);
+        ini.get_all("rename", vArray);
         importItems(vArray, global.APIMode);
         ext.rename = INIBinding::from<RegexMatchConfig>::from_ini(vArray, "@");
     }
-    ext.add_emoji = ini.Get("add_emoji");
-    ext.remove_old_emoji = ini.Get("remove_old_emoji");
-    if(ini.ItemPrefixExist("emoji"))
+    ext.add_emoji = ini.get("add_emoji");
+    ext.remove_old_emoji = ini.get("remove_old_emoji");
+    if(ini.item_prefix_exist("emoji"))
     {
         string_array vArray;
-        ini.GetAll("emoji", vArray);
+        ini.get_all("emoji", vArray);
         importItems(vArray, global.APIMode);
         ext.emoji = INIBinding::from<RegexMatchConfig>::from_ini(vArray, ",");
     }
-    if(ini.ItemPrefixExist("include_remarks"))
-        ini.GetAll("include_remarks", ext.include);
-    if(ini.ItemPrefixExist("exclude_remarks"))
-        ini.GetAll("exclude_remarks", ext.exclude);
+    if(ini.item_prefix_exist("include_remarks"))
+        ini.get_all("include_remarks", ext.include);
+    if(ini.item_prefix_exist("exclude_remarks"))
+        ini.get_all("exclude_remarks", ext.exclude);
 
-    if(ini.SectionExist("template") && ext.tpl_args != nullptr)
+    if(ini.section_exist("template") && ext.tpl_args != nullptr)
     {
-        ini.EnterSection("template");
+        ini.enter_section("template");
         string_multimap tempmap;
-        ini.GetItems(tempmap);
+        ini.get_items(tempmap);
         for(auto &x : tempmap)
             ext.tpl_args->local_vars[x.first] = x.second;
     }

@@ -3,50 +3,45 @@
 #include <sstream>
 #include <string>
 #include <vector>
-#include <stdlib.h>
-#include <time.h>
+#include <cstdlib>
+#include <ctime>
+#include <random>
 
 #include "string.h"
+#include "map_extra.h"
 
-std::vector<std::string> split(const std::string &s, const std::string &seperator)
+std::vector<std::string> split(const std::string &s, const std::string &separator)
 {
+    string_size bpos = 0, epos = s.find(separator);
     std::vector<std::string> result;
-    string_size i = 0;
-
-    while(i != s.size())
+    while(bpos < s.size())
     {
-        int flag = 0;
-        while(i != s.size() && flag == 0)
-        {
-            flag = 1;
-            for(string_size x = 0; x < seperator.size(); ++x)
-                if(s[i] == seperator[x])
-                {
-                    ++i;
-                    flag = 0;
-                    break;
-                }
-        }
-
-        flag = 0;
-        string_size j = i;
-        while(j != s.size() && flag == 0)
-        {
-            for(string_size x = 0; x < seperator.size(); ++x)
-                if(s[j] == seperator[x])
-                {
-                    flag = 1;
-                    break;
-                }
-            if(flag == 0)
-                ++j;
-        }
-        if(i != j)
-        {
-            result.push_back(s.substr(i, j-i));
-            i = j;
-        }
+        if(epos == std::string::npos)
+            epos = s.size();
+        result.push_back(s.substr(bpos, epos - bpos));
+        bpos = epos + separator.size();
+        epos = s.find(separator, bpos);
     }
+    return result;
+}
+
+void split(std::vector<std::string_view> &result, std::string_view s, char separator)
+{
+    string_size bpos = 0, epos = s.find(separator);
+    while(bpos < s.size())
+    {
+        if(epos == std::string_view::npos)
+            epos = s.size();
+        result.push_back(s.substr(bpos, epos - bpos));
+        bpos = epos + 1;
+        epos = s.find(separator, bpos);
+    }
+}
+
+std::vector<std::string_view> split(std::string_view s, char separator)
+{
+    std::vector<std::string_view> result;
+    split(result, s, separator);
     return result;
 }
 
@@ -96,7 +91,7 @@ std::string toUpper(const std::string &str)
 void processEscapeChar(std::string &str)
 {
     string_size pos = str.find('\\');
-    while(pos != str.npos)
+    while(pos != std::string::npos)
     {
         if(pos == str.size())
             break;
@@ -146,7 +141,7 @@ void processEscapeCharReverse(std::string &str)
 
 int parseCommaKeyValue(const std::string &input, const std::string &separator, string_pair_array &result)
 {
-    string_size bpos = 0, epos = input.find(',');
+    string_size bpos = 0, epos = input.find(separator);
     std::string kv;
     while(bpos < input.size())
     {
@@ -155,9 +150,9 @@ int parseCommaKeyValue(const std::string &input, const std::string &separator, s
         else if(epos && input[epos - 1] == '\\')
         {
             kv += input.substr(bpos, epos - bpos - 1);
-            kv += ',';
+            kv += separator;
             bpos = epos + 1;
-            epos = input.find(',', bpos);
+            epos = input.find(separator, bpos);
             continue;
         }
         kv += input.substr(bpos, epos - bpos);
@@ -168,9 +163,9 @@ int parseCommaKeyValue(const std::string &input, const std::string &separator, s
             result.emplace_back(kv.substr(0, eqpos), kv.substr(eqpos + 1));
         kv.clear();
         bpos = epos + 1;
-        epos = input.find(',', bpos);
+        epos = input.find(separator, bpos);
     }
-    if(kv.size())
+    if(!kv.empty())
     {
         string_size eqpos = kv.find('=');
         if(eqpos == std::string::npos)
@@ -234,13 +229,13 @@ std::string trimWhitespace(const std::string &str, bool before, bool after)
     {
         epos = str.find_last_not_of(whitespaces);
         if(epos == std::string::npos)
-            return std::string();
+            return "";
     }
     if(before)
     {
         bpos = str.find_first_not_of(whitespaces);
         if(bpos == std::string::npos)
-            return std::string();
+            return "";
     }
     return str.substr(bpos, epos - bpos + 1);
 }
@@ -283,19 +278,27 @@ std::string getUrlArg(const std::string &url, const std::string &request)
     while(pos)
     {
         pos = url.rfind(pattern, pos);
-        if(pos != url.npos)
+        if(pos != std::string::npos)
         {
             if(pos == 0 || url[pos - 1] == '&' || url[pos - 1] == '?')
             {
                 pos += pattern.size();
-                return url.substr(pos, url.find("&", pos) - pos);
+                return url.substr(pos, url.find('&', pos) - pos);
             }
         }
         else
             break;
         pos--;
     }
-    return std::string();
+    return "";
+}
+
+std::string getUrlArg(const string_multimap &args, const std::string &request)
+{
+    auto it = args.find(request);
+    if(it != args.end())
+        return it->second;
+    return "";
 }
 
 std::string replaceAllDistinct(std::string str, const std::string &old_value, const std::string &new_value)
@@ -354,26 +357,27 @@ bool isStrUTF8(const std::string &data)
     return true;
 }
 
-std::string randomStr(const int len)
+std::string randomStr(int len)
 {
     std::string retData;
-    srand(time(NULL));
-    int cnt = 0;
-    while(cnt < len)
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, 61);
+    for(int i = 0; i < len; i++)
     {
-        switch((rand() % 3))
+        int r = dis(gen);
+        if (r < 26)
         {
-        case 1:
-            retData += ('A' + rand() % 26);
-            break;
-        case 2:
-            retData += ('a' + rand() % 26);
-            break;
-        default:
-            retData += ('0' + rand() % 10);
-            break;
+            retData.push_back('a' + r);
         }
-        cnt++;
+        else if (r < 52)
+        {
+            retData.push_back('A' + r - 26);
+        }
+        else
+        {
+            retData.push_back('0' + r - 52);
+        }
     }
     return retData;
 }
@@ -398,7 +402,7 @@ int to_int(const std::string &str, int def_value)
 
 std::string join(const string_array &arr, const std::string &delimiter)
 {
-    if(arr.size() == 0)
+    if(arr.empty())
         return "";
     if(arr.size() == 1)
         return arr[0];
